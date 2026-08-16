@@ -1,5 +1,7 @@
 # Enclave
 
+🚀 **Live App:** [Frontend on GitHub Pages](https://f-gee.github.io/enclave) | ⚙️ **API:** [Backend on Render](https://enclave-7y3y.onrender.com)
+
 A multi-tenant team task management SaaS starter — the kind of thing you'd get if Linear and Asana had a stripped-down open-source cousin. Built as a portfolio-grade scaffold to demonstrate multi-tenancy, auth, and security patterns end-to-end, not just in isolated snippets.
 
 Every company that signs up gets its own **enclave** — an isolated workspace with its own members, roles, and tasks, sealed off from every other tenant on the same shared infrastructure.
