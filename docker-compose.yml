@@ -1,0 +1,56 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: enclave-postgres
+    environment:
+      POSTGRES_USER: enclave
+      POSTGRES_PASSWORD: enclave_dev_password
+      POSTGRES_DB: enclave
+    ports:
+      - "5432:5432"
+    volumes:
+      - enclave_pg_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: enclave-redis
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./backend
+    container_name: enclave-backend
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      PORT: 4000
+      DATABASE_URL: postgres://enclave:enclave_dev_password@postgres:5432/enclave
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: dev_only_change_me
+      FRONTEND_ORIGIN: http://localhost:5173
+      COOKIE_DOMAIN: localhost
+      NODE_ENV: development
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  frontend:
+    build: ./frontend
+    container_name: enclave-frontend
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:4000
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  enclave_pg_data:
