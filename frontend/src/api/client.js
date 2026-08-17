@@ -1,5 +1,22 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
+// Loud and unmissable on purpose: the #1 cause of "fetch network error" on a
+// deployed frontend is this resolving to localhost because VITE_API_URL
+// wasn't set at BUILD time (Vite bakes it in - setting it on the host after
+// the fact does nothing). Check this line in the browser console first.
+console.log(
+  `%c[api] API_URL = ${API_URL}${
+    import.meta.env.VITE_API_URL ? '' : ' (VITE_API_URL not set at build time - falling back to default!)'
+  }`,
+  'font-weight: bold; color: ' + (import.meta.env.VITE_API_URL ? '#0a0' : '#c00')
+);
+if (typeof window !== 'undefined' && window.location.protocol === 'https:' && API_URL.startsWith('http://')) {
+  console.error(
+    '[api] Page is served over HTTPS but API_URL is HTTP. Browsers silently block this ' +
+    '("mixed content") and it surfaces as an opaque fetch/network error with no CORS message at all.'
+  );
+}
+
 function readCookie(name) {
   return document.cookie
     .split('; ')
@@ -15,36 +32,83 @@ let isRefreshing = null;
 // before giving up and redirecting to login.
 export async function apiFetch(path, options = {}) {
   const csrfToken = readCookie('csrfToken');
+  const url = `${API_URL}${path}`;
+  const requestId = Math.random().toString(36).slice(2, 8);
 
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
-      ...options.headers
-    }
+  console.log(`[api][${requestId}] -> ${options.method || 'GET'} ${url}`, {
+    hasCsrfCookie: Boolean(csrfToken),
+    online: typeof navigator !== 'undefined' ? navigator.onLine : 'unknown'
   });
 
+  let res;
+  try {
+    res = await fetch(url, {
+      ...options,
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
+        ...options.headers
+      }
+    });
+  } catch (err) {
+    // fetch() only throws for things that never got an HTTP response at
+    // all: DNS failure, connection refused, CORS preflight rejection,
+    // mixed-content blocking, or the backend being asleep/unreachable.
+    // The browser deliberately gives no further detail than "Failed to
+    // fetch" for security reasons, so we log every plausible cause here
+    // instead of trying to guess which one it was.
+    console.error(`[api][${requestId}] Network-level failure calling ${url}`, err);
+    console.error(
+      `[api][${requestId}] This means the request never reached the server. Check, in order: ` +
+      `(1) is API_URL correct - see the [api] API_URL log above; ` +
+      `(2) is the backend actually up (visit ${API_URL}/health directly in a new tab); ` +
+      `(3) mixed content (https page calling http API); ` +
+      `(4) CORS preflight rejected - check the backend logs for a [cors] REJECTED line; ` +
+      `(5) an ad blocker/extension blocking the request.`
+    );
+    throw new Error(
+      `Could not reach the API at ${API_URL}. Open the browser console for diagnostic details, ` +
+      `or try visiting ${API_URL}/health directly.`
+    );
+  }
+
+  console.log(`[api][${requestId}] <- ${res.status} ${res.statusText} for ${url}`);
+
   if (res.status === 401 && !options._retried) {
+    console.log(`[api][${requestId}] 401 received, attempting silent refresh`);
     if (!isRefreshing) {
       isRefreshing = fetch(`${API_URL}/auth/refresh`, {
         method: 'POST',
         credentials: 'include'
-      }).finally(() => {
-        isRefreshing = null;
-      });
+      })
+        .then((r) => {
+          console.log(`[api] refresh -> ${r.status}`);
+          return r;
+        })
+        .catch((err) => {
+          console.error('[api] refresh call itself failed at the network level', err);
+          return { ok: false };
+        })
+        .finally(() => {
+          isRefreshing = null;
+        });
     }
     const refreshRes = await isRefreshing;
     if (refreshRes.ok) {
       return apiFetch(path, { ...options, _retried: true });
     }
+    console.warn(`[api][${requestId}] Refresh failed, redirecting to /login`);
     window.location.href = '/login';
     return null;
   }
 
-  const data = await res.json().catch(() => null);
+  const data = await res.json().catch((err) => {
+    console.warn(`[api][${requestId}] Response was not valid JSON`, err);
+    return null;
+  });
   if (!res.ok) {
+    console.error(`[api][${requestId}] Request failed:`, data?.error || res.statusText);
     throw new Error(data?.error || `Request failed (${res.status})`);
   }
   return data;
