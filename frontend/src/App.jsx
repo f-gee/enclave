@@ -12,6 +12,28 @@ function RequireAuth({ children }) {
   return children;
 }
 
+// Small always-visible build marker so a stale GitHub Pages deploy is
+// obvious at a glance instead of needing devtools open. Safe to leave in
+// production - it's just a version string, no sensitive info.
+function BuildBadge() {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 4,
+        right: 8,
+        fontSize: 11,
+        color: '#999',
+        fontFamily: 'monospace',
+        pointerEvents: 'none',
+        zIndex: 9999
+      }}
+    >
+      v{__APP_VERSION__} · {new Date(__BUILD_TIME__).toLocaleString()}
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <AuthProvider>
@@ -30,6 +52,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>
+      <BuildBadge />
     </AuthProvider>
   );
 }
