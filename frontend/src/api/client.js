@@ -24,19 +24,69 @@ function readCookie(name) {
     ?.split('=')[1];
 }
 
+// The CSRF cookie itself is set by the backend (httpOnly: false) purely so
+// same-domain deployments can read it via document.cookie. Ours is
+// cross-domain (GitHub Pages frontend, Render backend), and a cookie's
+// Domain scopes it to the site that set it - document.cookie on THIS origin
+// will never see it, regardless of httpOnly. So instead: the backend also
+// returns the token in the JSON body of /auth/signup, /auth/login, and
+// /auth/refresh, and we hold it here in memory. Lost on full page reload by
+// design - AuthContext re-establishes it via a silent refresh on mount.
+let csrfTokenInMemory = null;
+export function setCsrfToken(token) {
+  csrfTokenInMemory = token;
+  console.log(`[api] CSRF token ${token ? 'stored' : 'cleared'} in memory`);
+}
+
 let isRefreshing = null;
+
+// Shared by the automatic 401-retry below AND by AuthContext's on-mount
+// call. Deliberately a raw fetch, not apiFetch(path) - if this called
+// apiFetch('/auth/refresh'), a 401 here (e.g. a visitor with no session at
+// all) would trigger apiFetch's OWN 401-retry logic, which calls this same
+// endpoint again and, on failure, redirects to /login - meaning every
+// anonymous visitor would get bounced to /login on page load. Coalesces
+// concurrent callers into a single in-flight request either way.
+export function silentRefresh() {
+  if (!isRefreshing) {
+    isRefreshing = fetch(`${API_URL}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include'
+    })
+      .then(async (r) => {
+        console.log(`[api] refresh -> ${r.status}`);
+        if (r.ok) {
+          const refreshData = await r.json().catch(() => null);
+          if (refreshData?.csrfToken) setCsrfToken(refreshData.csrfToken);
+        }
+        return r;
+      })
+      .catch((err) => {
+        console.error('[api] refresh call itself failed at the network level', err);
+        return { ok: false };
+      })
+      .finally(() => {
+        isRefreshing = null;
+      });
+  }
+  return isRefreshing;
+}
 
 // Every call rides on the httpOnly cookies automatically (credentials:
 // 'include') — this client never touches the access token directly. On a
 // 401 it attempts one silent refresh (via the /auth/refresh cookie flow)
 // before giving up and redirecting to login.
 export async function apiFetch(path, options = {}) {
-  const csrfToken = readCookie('csrfToken');
+  // Kept as a fallback for same-domain local dev, where the cookie IS
+  // readable - but the in-memory value (set from a JSON response) always
+  // wins when we have it, since it's the only thing that works cross-domain.
+  const csrfToken = csrfTokenInMemory || readCookie('csrfToken');
   const url = `${API_URL}${path}`;
   const requestId = Math.random().toString(36).slice(2, 8);
 
   console.log(`[api][${requestId}] -> ${options.method || 'GET'} ${url}`, {
-    hasCsrfCookie: Boolean(csrfToken),
+    hasCsrfToken: Boolean(csrfToken),
+    csrfSource: csrfTokenInMemory ? 'memory' : readCookie('csrfToken') ? 'cookie' : 'none',
     online: typeof navigator !== 'undefined' ? navigator.onLine : 'unknown'
   });
 
@@ -77,24 +127,7 @@ export async function apiFetch(path, options = {}) {
 
   if (res.status === 401 && !options._retried) {
     console.log(`[api][${requestId}] 401 received, attempting silent refresh`);
-    if (!isRefreshing) {
-      isRefreshing = fetch(`${API_URL}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include'
-      })
-        .then((r) => {
-          console.log(`[api] refresh -> ${r.status}`);
-          return r;
-        })
-        .catch((err) => {
-          console.error('[api] refresh call itself failed at the network level', err);
-          return { ok: false };
-        })
-        .finally(() => {
-          isRefreshing = null;
-        });
-    }
-    const refreshRes = await isRefreshing;
+    const refreshRes = await silentRefresh();
     if (refreshRes.ok) {
       return apiFetch(path, { ...options, _retried: true });
     }

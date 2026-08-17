@@ -96,7 +96,15 @@ router.post('/signup', authLimiter, async (req, res) => {
     setAuthCookies(res, accessToken, refreshToken, csrfToken);
     res.status(201).json({
       user: { id: user.id, email: user.email, role: user.role },
-      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug }
+      tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+      // The CSRF cookie is set with httpOnly: false specifically so
+      // frontend JS can read it - but that only works when frontend and
+      // backend share a domain. GitHub Pages + Render don't, so JS on the
+      // frontend origin can never see a cookie whose Domain is the backend's
+      // host. Sending the value in the body too lets the frontend hold it
+      // in memory instead, while the cookie itself still exists for the
+      // backend to compare against on the next request.
+      csrfToken
     });
   } catch (err) {
     await client.query('ROLLBACK');
@@ -153,7 +161,10 @@ router.post('/login', authLimiter, async (req, res) => {
   setAuthCookies(res, accessToken, refreshToken, csrfToken);
   res.json({
     user: { id: user.id, email: user.email, role: user.role },
-    tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug }
+    tenant: { id: tenant.id, name: tenant.name, slug: tenant.slug },
+    // See the matching comment in /signup - the frontend can't read this
+    // cookie's value cross-domain, so it's handed over directly here too.
+    csrfToken
   });
 });
 
@@ -190,7 +201,18 @@ router.post('/refresh', async (req, res) => {
     httpOnly: true,
     maxAge: 15 * 60 * 1000
   });
-  res.json({ success: true });
+
+  // Rotate the CSRF token too, and hand the new value back in the body for
+  // the same reason as /signup and /login - the frontend can't read it back
+  // out of document.cookie cross-domain.
+  const csrfToken = generateCsrfToken();
+  res.cookie('csrfToken', csrfToken, {
+    ...baseCookieOpts,
+    httpOnly: false,
+    maxAge: REFRESH_TOKEN_TTL_MS
+  });
+
+  res.json({ success: true, csrfToken });
 });
 
 router.post('/logout', async (req, res) => {
