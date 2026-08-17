@@ -29,7 +29,7 @@ function BuildBadge() {
         zIndex: 9999
       }}
     >
-      v{__APP_VERSION__} · {new Date(__BUILD_TIME__).toLocaleString()}
+      v{__APP_VERSION__} ({__GIT_HASH__})
     </div>
   );
 }

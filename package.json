@@ -16,7 +16,7 @@
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down",
     "db:migrate": "docker exec -i enclave-postgres psql -U enclave -d enclave < schema.sql",
-    "deploy:pages": "cross-env VITE_BASE_PATH=/enclave/ npm run build -w frontend && gh-pages -d frontend/dist"
+    "deploy:pages": "cross-env VITE_BASE_PATH=/enclave/ npm run build -w frontend && node -e \"require('fs').copyFileSync('frontend/dist/index.html','frontend/dist/404.html')\" && gh-pages -d frontend/dist"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
