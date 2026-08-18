@@ -29,13 +29,12 @@ router.post('/', requireRole('admin'), async (req, res) => {
   const invite = await req.db.insert('invites', {
     email: email.toLowerCase(),
     role,
-    token_hash: hashToken(rawToken)
+    token_hash: hashToken(rawToken),
+    // Set directly on insert - `expires_at` is NOT NULL with no column
+    // default, so a separate follow-up UPDATE (the previous approach)
+    // never even gets there: the INSERT itself fails the constraint first.
+    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
   });
-
-  await req.db.query(
-    `UPDATE invites SET expires_at = now() + interval '7 days' WHERE id = $1`,
-    [invite.id]
-  );
 
   await req.db.insert('audit_log', {
     user_id: req.user.id,

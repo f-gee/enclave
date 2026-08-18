@@ -78,3 +78,128 @@ button {
 }
 
 .dashboard section form input { flex: 1; }
+
+/* --- Tabs --- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #22252c;
+}
+
+.tabs button {
+  background: transparent;
+  color: #9aa0aa;
+  border-radius: 6px 6px 0 0;
+  padding: 8px 14px;
+}
+
+.tabs button.active {
+  background: #1a1d24;
+  color: #e6e6e6;
+}
+
+/* --- Tasks & comments --- */
+.dashboard li.task-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.task-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.task-title { cursor: pointer; }
+.task-actions { display: flex; gap: 6px; }
+
+button.ghost {
+  background: transparent;
+  color: #5b8def;
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+button.danger { background: #b3413f; }
+
+.comments {
+  background: #14161c;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.comment {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #22252c;
+}
+
+.comment time { color: #6a6f7a; font-size: 11px; }
+
+.comment-form { display: flex; gap: 6px; margin: 0; }
+.comment-form input { flex: 1; }
+
+/* --- Generic list/row helpers (Members, Audit log, API keys) --- */
+.plain-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid #22252c;
+  gap: 12px;
+}
+
+.row-actions { display: flex; gap: 8px; align-items: center; }
+
+.badge {
+  background: #1a1d24;
+  border: 1px solid #333;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
+.audit-row { align-items: flex-start; }
+
+.muted { color: #6a6f7a; font-size: 13px; }
+
+.callout {
+  background: #1a1d24;
+  border: 1px solid #5b8def;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.secret {
+  word-break: break-all;
+  background: #0f1115;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  background: #1a1d24;
+  color: #e6e6e6;
+}

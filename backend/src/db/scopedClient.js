@@ -42,8 +42,15 @@ class ScopedDb {
   }
 
   async find(table, whereClause = '1=1', params = []) {
-    const sql = `SELECT * FROM ${table} WHERE tenant_id = $1 AND (${whereClause})`;
-    const { rows } = await this.query(sql, [this.tenantId, ...params]);
+    // Caller-supplied placeholders ($1, $2, ...) line up 1:1 with the
+    // `params` array the caller passes in - the tenant_id filter is
+    // appended as the *last* param instead of being prepended as $1, so a
+    // call like find('tasks', 'id = $1', [taskId]) works exactly as
+    // written instead of requiring callers to account for an invisible
+    // extra parameter.
+    const tenantParamIndex = params.length + 1;
+    const sql = `SELECT * FROM ${table} WHERE tenant_id = $${tenantParamIndex} AND (${whereClause})`;
+    const { rows } = await this.query(sql, [...params, this.tenantId]);
     return rows;
   }
 

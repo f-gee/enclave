@@ -11,7 +11,7 @@ function authenticate(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = { id: decoded.userId, role: decoded.role };
+    req.user = { id: decoded.userId, role: decoded.role, email: decoded.email };
     req.tenantId = decoded.tenantId;
     next();
   } catch (err) {

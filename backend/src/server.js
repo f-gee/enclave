@@ -9,11 +9,17 @@ const jwt = require('jsonwebtoken');
 const cookie = require('cookie');
 
 const authenticate = require('./middleware/authenticate');
+const apiKeyAuth = require('./middleware/apiKeyAuth');
 const verifyCsrf = require('./middleware/csrf');
 const scopeDb = require('./middleware/scopeDb');
+const tenantRateLimiter = require('./middleware/tenantRateLimiter');
 
 const authRoutes = require('./routes/auth');
 const taskRoutes = require('./routes/tasks');
+const memberRoutes = require('./routes/members');
+const auditRoutes = require('./routes/audit');
+const apiKeyRoutes = require('./routes/apiKeys');
+const externalRoutes = require('./routes/external');
 const { router: inviteRoutes, publicRouter: publicInviteRoutes } = require('./routes/invites');
 
 // --- Startup config dump ---------------------------------------------
@@ -145,7 +151,38 @@ app.use(
   scopeDb,
   // CSRF check only applies to state-changing methods, not GET
   (req, res, next) => (req.method === 'GET' ? next() : verifyCsrf(req, res, next)),
+  tenantRateLimiter({ windowMs: 60 * 1000, max: 240, label: 'tasks' }),
   taskRoutes
+);
+
+app.use(
+  '/members',
+  authenticate,
+  scopeDb,
+  (req, res, next) => (req.method === 'GET' ? next() : verifyCsrf(req, res, next)),
+  memberRoutes
+);
+
+app.use('/audit', authenticate, scopeDb, auditRoutes);
+
+app.use(
+  '/api-keys',
+  authenticate,
+  scopeDb,
+  (req, res, next) => (req.method === 'GET' ? next() : verifyCsrf(req, res, next)),
+  apiKeyRoutes
+);
+
+// Machine-to-machine traffic: no cookies/CSRF, authenticated purely by the
+// `Authorization: Bearer` header (see middleware/apiKeyAuth.js). Gets its
+// own, tighter tenant rate limit since it's unattended integration traffic
+// rather than a human clicking around.
+app.use(
+  '/external',
+  apiKeyAuth,
+  scopeDb,
+  tenantRateLimiter({ windowMs: 60 * 1000, max: 60, label: 'external-api' }),
+  externalRoutes
 );
 
 app.use((err, req, res, next) => {

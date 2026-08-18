@@ -2,8 +2,13 @@ import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
 import { apiFetch } from '../api/client';
 import { useAuth } from '../context/AuthContext';
+import TaskItem from '../components/TaskItem';
+import MembersPanel from '../components/MembersPanel';
+import AuditLogPanel from '../components/AuditLogPanel';
+import ApiKeysPanel from '../components/ApiKeysPanel';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+const isManager = (role) => role === 'admin' || role === 'owner';
 
 export default function Dashboard() {
   const { user, tenant, logout } = useAuth();
@@ -11,6 +16,7 @@ export default function Dashboard() {
   const [title, setTitle] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteLink, setInviteLink] = useState('');
+  const [tab, setTab] = useState('tasks');
 
   useEffect(() => {
     apiFetch('/tasks').then((data) => data && setTasks(data.tasks));
@@ -68,49 +74,70 @@ export default function Dashboard() {
         <button onClick={logout}>Log out</button>
       </header>
 
-      <section>
-        <h2>Tasks</h2>
-        <form onSubmit={createTask}>
-          <input
-            placeholder="New task title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-          <button type="submit">Add</button>
-        </form>
-        <ul>
-          {tasks.map((task) => (
-            <li key={task.id} className={task.status === 'done' ? 'done' : ''}>
-              <span onClick={() => toggleStatus(task)}>{task.title}</span>
-              {(user?.role === 'admin' || user?.role === 'owner') && (
-                <button onClick={() => deleteTask(task.id)}>Delete</button>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
+      <nav className="tabs">
+        <button className={tab === 'tasks' ? 'active' : ''} onClick={() => setTab('tasks')}>Tasks</button>
+        <button className={tab === 'members' ? 'active' : ''} onClick={() => setTab('members')}>Members</button>
+        {isManager(user?.role) && (
+          <>
+            <button className={tab === 'audit' ? 'active' : ''} onClick={() => setTab('audit')}>Audit log</button>
+            <button className={tab === 'keys' ? 'active' : ''} onClick={() => setTab('keys')}>API keys</button>
+          </>
+        )}
+      </nav>
 
-      {(user?.role === 'admin' || user?.role === 'owner') && (
-        <section>
-          <h2>Invite a teammate</h2>
-          <form onSubmit={sendInvite}>
-            <input
-              type="email"
-              placeholder="teammate@company.com"
-              value={inviteEmail}
-              onChange={(e) => setInviteEmail(e.target.value)}
-              required
-            />
-            <button type="submit">Send invite</button>
-          </form>
-          {inviteLink && (
-            <p>
-              Invite link (would normally be emailed):{' '}
-              <code>{inviteLink}</code>
-            </p>
+      {tab === 'tasks' && (
+        <>
+          <section>
+            <h2>Tasks</h2>
+            <form onSubmit={createTask}>
+              <input
+                placeholder="New task title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+              <button type="submit">Add</button>
+            </form>
+            <ul>
+              {tasks.map((task) => (
+                <TaskItem
+                  key={task.id}
+                  task={task}
+                  canDelete={isManager(user?.role)}
+                  onToggle={toggleStatus}
+                  onDelete={deleteTask}
+                  currentUserEmail={user?.email}
+                />
+              ))}
+            </ul>
+          </section>
+
+          {isManager(user?.role) && (
+            <section>
+              <h2>Invite a teammate</h2>
+              <form onSubmit={sendInvite}>
+                <input
+                  type="email"
+                  placeholder="teammate@company.com"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  required
+                />
+                <button type="submit">Send invite</button>
+              </form>
+              {inviteLink && (
+                <p>
+                  Invite link (would normally be emailed):{' '}
+                  <code>{inviteLink}</code>
+                </p>
+              )}
+            </section>
           )}
-        </section>
+        </>
       )}
+
+      {tab === 'members' && <MembersPanel currentUser={user} canManage={isManager(user?.role)} />}
+      {tab === 'audit' && isManager(user?.role) && <AuditLogPanel />}
+      {tab === 'keys' && isManager(user?.role) && <ApiKeysPanel />}
     </div>
   );
 }

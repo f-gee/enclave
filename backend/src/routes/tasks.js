@@ -71,4 +71,53 @@ router.delete('/:id', requireRole('admin'), async (req, res) => {
   res.json({ success: true });
 });
 
+// --- Comments ---------------------------------------------------------
+// Nested under /tasks/:id/comments rather than a top-level /comments route
+// so a comment can never be created without a task_id, and so the tenant +
+// task-ownership check (task belongs to this tenant) happens once, here,
+// instead of being re-derived in a separate router.
+
+const commentSchema = z.object({
+  body: z.string().min(1).max(2000)
+});
+
+router.get('/:id/comments', async (req, res) => {
+  const task = await req.db.findOne('tasks', 'id = $1', [req.params.id]);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const result = await req.db.query(
+    `SELECT task_comments.id, task_comments.body, task_comments.created_at,
+            task_comments.user_id, users.email AS author_email
+     FROM task_comments
+     JOIN users ON users.id = task_comments.user_id
+     WHERE task_comments.tenant_id = $1 AND task_comments.task_id = $2
+     ORDER BY task_comments.created_at ASC`,
+    [req.tenantId, req.params.id]
+  );
+
+  res.json({ comments: result.rows });
+});
+
+router.post('/:id/comments', async (req, res) => {
+  const parsed = commentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  const task = await req.db.findOne('tasks', 'id = $1', [req.params.id]);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const comment = await req.db.insert('task_comments', {
+    task_id: req.params.id,
+    user_id: req.user.id,
+    body: parsed.data.body
+  });
+
+  await logAudit(req, 'task.commented', task.id, { comment_id: comment.id });
+
+  const payload = { ...comment, author_email: req.user.email };
+  req.io.to(req.tenantId).emit('comment:created', payload);
+  res.status(201).json({ comment: payload });
+});
+
 module.exports = router;

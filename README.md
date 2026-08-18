@@ -145,30 +145,58 @@ enclave/
 │   └── src/
 │       ├── server.js              # app entrypoint, CORS, socket.io setup
 │       ├── config/db.js           # raw pg pool
+│       ├── config/redis.js        # shared Redis client (tenant rate limiting)
 │       ├── db/scopedClient.js     # tenant-scoped query wrapper (the "can't forget tenant_id" pattern)
 │       ├── middleware/
 │       │   ├── authenticate.js    # verifies JWT cookie -> req.user, req.tenantId
+│       │   ├── apiKeyAuth.js      # verifies Authorization: Bearer <key> -> req.user, req.tenantId
 │       │   ├── csrf.js            # double-submit CSRF check
 │       │   ├── scopeDb.js         # attaches req.db (ScopedDb) using req.tenantId
 │       │   ├── requireRole.js     # server-side role/permission enforcement
-│       │   └── rateLimiter.js
+│       │   ├── rateLimiter.js     # per-IP limiter for /login, /signup
+│       │   └── tenantRateLimiter.js # per-tenant usage limiter (Redis-backed)
 │       ├── routes/
 │       │   ├── auth.js            # signup, login, refresh, logout
 │       │   ├── invites.js         # invite teammate into a tenant
-│       │   └── tasks.js           # tenant-scoped task CRUD + socket broadcast
+│       │   ├── tasks.js           # tenant-scoped task CRUD + comments + socket broadcast
+│       │   ├── members.js         # list/update-role/remove teammates
+│       │   ├── audit.js           # read the audit_log table
+│       │   ├── apiKeys.js         # create/list/revoke per-tenant API keys
+│       │   └── external.js        # read-only routes for API-key-authenticated integrations
 │       └── utils/tokens.js
 ├── frontend/
 │   └── src/
 │       ├── api/client.js          # fetch wrapper, credentials + CSRF header, auto-refresh-on-401
 │       ├── context/AuthContext.jsx
+│       ├── components/
+│       │   ├── TaskItem.jsx       # task row with inline comment thread
+│       │   ├── MembersPanel.jsx   # team member list, role changes, removal
+│       │   ├── AuditLogPanel.jsx  # recent tenant activity
+│       │   └── ApiKeysPanel.jsx   # create/revoke API keys
 │       └── pages/{Login,Signup,Dashboard}.jsx
 ├── schema.sql                     # tables + Postgres RLS policies
 └── docker-compose.yml
 ```
 
+## Features added since the initial scaffold
+
+- **Team member management** — list members, change roles, remove members. Server-side rank checks (`viewer < member < admin < owner`) stop an admin from granting a role above their own or acting on someone above their rank, and stop the last owner in a tenant from being demoted or removed.
+- **Audit log viewer** — `GET /audit` (admin+) surfaces the `audit_log` table that already existed in the schema but had no read path.
+- **Task comments** — threaded comments per task (`/tasks/:id/comments`), broadcast over the existing Socket.io tenant rooms.
+- **Per-tenant API keys** — `admin+` can create/list/revoke keys under `/api-keys`. Keys are hashed at rest (same pattern as refresh/invite tokens) and shown in full exactly once, at creation. Authenticate with `Authorization: Bearer encl_live_...` against the read-only `/external/*` routes — this is the intended shape for external integrations (a reporting dashboard, a status page) rather than another way to drive the app.
+- **Per-tenant usage rate limiting** — `middleware/tenantRateLimiter.js` limits by `tenant_id` (Redis-backed fixed window, shared correctly across multiple backend instances), independent of the existing per-IP limiter on `/login`/`/signup`. Applied to `/tasks` and, with a tighter limit, `/external/*`.
+
+### Bugs fixed along the way
+
+A few pre-existing issues surfaced while wiring the above up against a real Postgres/Redis instance and are worth knowing about:
+
+- `db/scopedClient.js`'s `find`/`findOne` prepended `tenant_id` as `$1`, so any caller-supplied where-clause using `$1` collided with it. Fixed so caller placeholders (`$1`, `$2`, ...) map 1:1 to the caller's own `params` array; the tenant filter is appended last instead.
+- `ScopedDb.update()` always sets `updated_at = now()`, which assumes every table has that column. `users` and `api_keys` didn't - added it to both (`tasks` already had it).
+- `routes/invites.js` set `expires_at` via a follow-up `UPDATE` after the initial `INSERT`, but `expires_at` is `NOT NULL` with no default - the `INSERT` failed the constraint before the `UPDATE` ever ran. Fixed to set it directly on insert.
+
 ## What to build next (good next portfolio commits)
 
-- Audit log table (`who did what, when`) — trivial to add given the scoped DB wrapper already knows `req.user` and `req.tenantId`
-- Per-tenant API keys for external integrations
-- Usage-based rate limiting per tenant (not just per IP)
+- Usage-based *billing* on top of the new usage rate limiting (Stripe metered billing keyed off the same per-tenant counters)
 - Swap Row Level Security to be the *only* enforcement layer and write a test that proves a forgotten `WHERE` clause still can't leak data
+- Task assignment notifications (email or in-app) when `assignee_id` changes
+- Scoped, write-capable API key permissions (e.g. a key that can create tasks but not manage members) instead of the current read-only `/external/*` surface
