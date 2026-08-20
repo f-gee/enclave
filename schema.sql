@@ -91,6 +91,12 @@ CREATE TABLE api_keys (
   prefix TEXT NOT NULL,
   key_hash TEXT NOT NULL UNIQUE,
   revoked BOOLEAN NOT NULL DEFAULT false,
+  -- Explicit, narrow scopes (e.g. 'tasks:read', 'tasks:write') rather than
+  -- one implicit "API keys can do X" blanket - see backend/src/utils/scopes.js
+  -- for the allowlist and middleware/requirePermission.js for enforcement.
+  -- Defaults to empty (read-nothing, write-nothing) so a key is only as
+  -- capable as what was explicitly granted at creation time.
+  permissions TEXT[] NOT NULL DEFAULT '{}',
   last_used_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- See the matching comment on users.updated_at - required by ScopedDb.update().
@@ -140,3 +146,11 @@ CREATE POLICY tenant_isolation_comments ON task_comments
 
 CREATE POLICY tenant_isolation_apikeys ON api_keys
   USING (tenant_id = current_setting('app.current_tenant', true)::uuid);
+
+-- ─────────────────────────────────────────────────────────
+-- Migration: scoped API key permissions
+-- Safe to re-run against a database that already has the tables above
+-- (e.g. your existing Render Postgres instance) - IF NOT EXISTS makes this
+-- a no-op if you're running the full schema.sql fresh instead.
+-- ─────────────────────────────────────────────────────────
+ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS permissions TEXT[] NOT NULL DEFAULT '{}';

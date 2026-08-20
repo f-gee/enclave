@@ -196,6 +196,34 @@ button.danger { background: #b3413f; }
   font-size: 13px;
 }
 
+.scope-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  border: 1px solid #22252c;
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin: 0;
+}
+
+.scope-picker legend {
+  padding: 0 6px;
+  font-size: 12px;
+  color: #6a6f7a;
+}
+
+.scope-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scope-option input { margin: 0; }
+
+.scope-list { display: inline-block; margin-top: 2px; }
+
 select {
   padding: 6px 8px;
   border-radius: 6px;

@@ -12,7 +12,18 @@ const { hashToken, API_KEY_PREFIX } = require('../utils/tokens');
  * handlers) works unmodified regardless of which auth path got the request
  * here. req.user.role is fixed at 'member' - API keys are meant for
  * read/write integration traffic, not for exercising owner/admin-only
- * routes like inviting or deleting teammates.
+ * routes like inviting or deleting teammates. Fine-grained write access
+ * (which resources a key can touch, not just "can it write at all") is
+ * layered on top via req.apiKeyScopes + middleware/requirePermission.js.
+ *
+ * req.user.id is set to the key's creator rather than left null: any write
+ * route that reuses the existing insert helpers (task.created_by, etc.)
+ * needs a real user id to satisfy the NOT NULL/FK constraint on that
+ * column, and attributing automated writes to "the admin who issued this
+ * key" is a reasonable, auditable choice - it's also who's accountable if
+ * the key leaks. req.apiKeyId is kept separately so audit log entries and
+ * route logic can still tell a key-driven write apart from that admin
+ * clicking around the UI themselves.
  */
 async function apiKeyAuth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -23,8 +34,14 @@ async function apiKeyAuth(req, res, next) {
   }
 
   const keyHash = hashToken(rawKey);
+  // Joined to users here (rather than a separate lookup in whichever route
+  // happens to need an email, e.g. comment attribution) so every route
+  // downstream gets a consistent req.user shape regardless of auth method.
   const result = await pool.query(
-    `SELECT * FROM api_keys WHERE key_hash = $1 AND revoked = false`,
+    `SELECT api_keys.*, users.email AS creator_email
+     FROM api_keys
+     JOIN users ON users.id = api_keys.created_by
+     WHERE api_keys.key_hash = $1 AND api_keys.revoked = false`,
     [keyHash]
   );
   const apiKey = result.rows[0];
@@ -39,7 +56,9 @@ async function apiKeyAuth(req, res, next) {
     .catch((err) => console.error('[api-key] Failed to update last_used_at:', err.message));
 
   req.tenantId = apiKey.tenant_id;
-  req.user = { id: null, role: 'member', apiKeyId: apiKey.id };
+  req.user = { id: apiKey.created_by, role: 'member', email: apiKey.creator_email, apiKeyId: apiKey.id };
+  req.apiKeyId = apiKey.id;
+  req.apiKeyScopes = apiKey.permissions || [];
   req.authMethod = 'api-key';
   next();
 }

@@ -1,6 +1,6 @@
 {
   "name": "enclave",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "private": true,
   "description": "Multi-tenant SaaS starter with tenant-isolated auth, RBAC, and Postgres RLS.",
   "workspaces": [

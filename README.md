@@ -83,7 +83,7 @@ Then sign up a company at `/signup` — this creates a tenant + an Owner user.
    | `NODE_ENV` | `production` | Also flips on SSL for the Postgres connection, which Render's managed Postgres requires. |
    | `PORT` | leave unset | Render sets this itself. |
 
-3. Run `schema.sql` against the database once (e.g. via `psql` using the **External** Database URL, or Render's built-in psql shell).
+3. Run `schema.sql` against the database once (e.g. via `psql` using the **External** Database URL, or Render's built-in psql shell). If you're updating an already-deployed database rather than provisioning fresh, re-running `schema.sql` is still safe — the `CREATE TABLE`s will error-and-skip on things that already exist, and the migration block at the bottom (`ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS permissions ...`) picks up the new column without touching existing rows (existing keys default to `permissions = '{}'`, i.e. no access until you edit or recreate them).
 4. Redeploy, then check the boot logs. A healthy startup looks like:
 
    ```
@@ -183,7 +183,8 @@ enclave/
 - **Team member management** — list members, change roles, remove members. Server-side rank checks (`viewer < member < admin < owner`) stop an admin from granting a role above their own or acting on someone above their rank, and stop the last owner in a tenant from being demoted or removed.
 - **Audit log viewer** — `GET /audit` (admin+) surfaces the `audit_log` table that already existed in the schema but had no read path.
 - **Task comments** — threaded comments per task (`/tasks/:id/comments`), broadcast over the existing Socket.io tenant rooms.
-- **Per-tenant API keys** — `admin+` can create/list/revoke keys under `/api-keys`. Keys are hashed at rest (same pattern as refresh/invite tokens) and shown in full exactly once, at creation. Authenticate with `Authorization: Bearer encl_live_...` against the read-only `/external/*` routes — this is the intended shape for external integrations (a reporting dashboard, a status page) rather than another way to drive the app.
+- **Per-tenant API keys** — `admin+` can create/list/revoke keys under `/api-keys`. Keys are hashed at rest (same pattern as refresh/invite tokens) and shown in full exactly once, at creation. Authenticate with `Authorization: Bearer encl_live_...` against `/external/*`.
+- **Scoped, write-capable API key permissions** — each key is granted specific scopes at creation (`tasks:read`, `tasks:write`, `comments:read`, `comments:write`), checked per-route by `middleware/requirePermission.js` against the allowlist in `utils/scopes.js`. A key created with no scopes authenticates but can't reach anything; `/external/*` now also supports creating/updating tasks and posting comments, gated by the `*:write` scopes, in addition to the original read routes. Writes are attributed to the key's creator (the admin who issued it) in the audit log and over the task/comment sockets, tagged with `via: 'api_key'` and the key's id so they're distinguishable from that admin acting through the UI directly.
 - **Per-tenant usage rate limiting** — `middleware/tenantRateLimiter.js` limits by `tenant_id` (Redis-backed fixed window, shared correctly across multiple backend instances), independent of the existing per-IP limiter on `/login`/`/signup`. Applied to `/tasks` and, with a tighter limit, `/external/*`.
 
 ### Bugs fixed along the way
@@ -199,4 +200,5 @@ A few pre-existing issues surfaced while wiring the above up against a real Post
 - Usage-based *billing* on top of the new usage rate limiting (Stripe metered billing keyed off the same per-tenant counters)
 - Swap Row Level Security to be the *only* enforcement layer and write a test that proves a forgotten `WHERE` clause still can't leak data
 - Task assignment notifications (email or in-app) when `assignee_id` changes
-- Scoped, write-capable API key permissions (e.g. a key that can create tasks but not manage members) instead of the current read-only `/external/*` surface
+- Per-scope rate limits on `/external/*` (a `tasks:write` key hammering the API shouldn't starve a `tasks:read`-only key on the same tenant)
+- Save last tenant URL in localStorage
