@@ -1,11 +1,21 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { readLastTenantSlug } from '../api/tenantSlug';
 
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ tenantSlug: '', email: '', password: '' });
+  // Captured once on mount so we can tell "still showing what we
+  // remembered" apart from "user typed something new" - the hint below
+  // should disappear the moment they edit the field, not stay stuck on a
+  // value that's no longer accurate.
+  const [rememberedSlug] = useState(() => readLastTenantSlug());
+  const [form, setForm] = useState(() => ({
+    tenantSlug: rememberedSlug,
+    email: '',
+    password: ''
+  }));
   const [error, setError] = useState('');
 
   async function handleSubmit(e) {
@@ -31,6 +41,9 @@ export default function Login() {
             placeholder="acme-x7k2"
             required
           />
+          {rememberedSlug && form.tenantSlug === rememberedSlug && (
+            <span className="muted"> (remembered from last login)</span>
+          )}
         </label>
         <label>
           Email

@@ -186,6 +186,7 @@ enclave/
 - **Per-tenant API keys** — `admin+` can create/list/revoke keys under `/api-keys`. Keys are hashed at rest (same pattern as refresh/invite tokens) and shown in full exactly once, at creation. Authenticate with `Authorization: Bearer encl_live_...` against `/external/*`.
 - **Scoped, write-capable API key permissions** — each key is granted specific scopes at creation (`tasks:read`, `tasks:write`, `comments:read`, `comments:write`), checked per-route by `middleware/requirePermission.js` against the allowlist in `utils/scopes.js`. A key created with no scopes authenticates but can't reach anything; `/external/*` now also supports creating/updating tasks and posting comments, gated by the `*:write` scopes, in addition to the original read routes. Writes are attributed to the key's creator (the admin who issued it) in the audit log and over the task/comment sockets, tagged with `via: 'api_key'` and the key's id so they're distinguishable from that admin acting through the UI directly.
 - **Per-tenant usage rate limiting** — `middleware/tenantRateLimiter.js` limits by `tenant_id` (Redis-backed fixed window, shared correctly across multiple backend instances), independent of the existing per-IP limiter on `/login`/`/signup`. Applied to `/tasks` and, with a tighter limit, `/external/*`.
+- **Remembered workspace slug** — the last tenant slug you logged into (or created) is saved to `localStorage` and pre-fills the Login form next time, so you're not stuck re-typing a randomly generated slug like `acme-x7k2` on every visit. Along the way, fixed a bug in Signup where the "here's your slug" message was set into state and then immediately navigated away from in the same tick, so it never actually rendered — Signup now shows the slug and waits for you to continue.
 
 ### Bugs fixed along the way
 
@@ -201,4 +202,3 @@ A few pre-existing issues surfaced while wiring the above up against a real Post
 - Swap Row Level Security to be the *only* enforcement layer and write a test that proves a forgotten `WHERE` clause still can't leak data
 - Task assignment notifications (email or in-app) when `assignee_id` changes
 - Per-scope rate limits on `/external/*` (a `tasks:write` key hammering the API shouldn't starve a `tasks:read`-only key on the same tenant)
-- Save last tenant URL in localStorage

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { apiFetch, setCsrfToken, silentRefresh } from '../api/client';
+import { saveLastTenantSlug } from '../api/tenantSlug';
 
 const AuthContext = createContext(null);
 
@@ -39,6 +40,10 @@ export function AuthProvider({ children }) {
     setCsrfToken(data.csrfToken);
     setUser(data.user);
     setTenant(data.tenant);
+    // Remember on successful login only - saving the typed slug regardless
+    // of outcome would happily persist a typo'd/wrong slug and make the
+    // next login attempt start from the same mistake.
+    saveLastTenantSlug(data.tenant?.slug);
     return data;
   }, []);
 
@@ -50,6 +55,9 @@ export function AuthProvider({ children }) {
     setCsrfToken(data.csrfToken);
     setUser(data.user);
     setTenant(data.tenant);
+    // A freshly created workspace's slug is exactly the thing this whole
+    // feature exists to stop you from having to remember/re-copy.
+    saveLastTenantSlug(data.tenant?.slug);
     return data;
   }, []);
 
